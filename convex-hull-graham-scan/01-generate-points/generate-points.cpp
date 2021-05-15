@@ -13,28 +13,24 @@ struct Point
 std::vector<Point> points;
 
 int totalPoints;
-int maxXY;
+int maxXY = 1000;
 std::string fileName;
 
 int main(int argc, char *argv[])
 {
-    // arguments:
-    //     #1 is n number of points,
-    //     #2 is the max x and y value,
-    //     #3 is the name of the output file.
-    if (argc == 4)
+    // arguments: #1 is n number of points, #2 is the name of the output file.
+    if (argc == 3)
     {
         totalPoints = std::atoi(argv[1]);
-        maxXY = std::atoi(argv[2]);
-        fileName = argv[3];
+        fileName = argv[2];
     }
     else
     {
-        std::cout << "Usage: " << argv[0] << " <number of points> <max x and y value> <output file>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <number of points> <output file>" << std::endl;
     }
 
     double min = 0.0;
-    double max = maxXY*1.0;
+    double max = maxXY * 1.0;
 
     /**
      * generate random coordinates
@@ -53,9 +49,6 @@ int main(int argc, char *argv[])
      */
     std::ofstream datFile;
     datFile.open(fileName);
-
-    // first line of the file is the total number of points
-    //datFile << points << std::endl;
 
     // iterate the vector to write all the coordinates
     for (int i = 0; i < points.size(); i++)
