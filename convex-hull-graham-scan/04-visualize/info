@@ -1,0 +1,5 @@
+# compile
+g++ visualize.cpp -lglut -lGLU -lGL -o visualize
+
+# run
+visualize points.dat lines.dat

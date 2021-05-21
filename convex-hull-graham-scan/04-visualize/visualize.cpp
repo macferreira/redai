@@ -16,6 +16,8 @@ struct Line
 std::vector<Point> points;
 std::vector<Line> lines;
 
+float maxXY = 1000.0;
+
 void display(void)
 {
     // background color
@@ -44,7 +46,7 @@ void display(void)
     glColor3f(0, 0, 0);
     for (int i = 0; i < points.size(); i++)
     {
-        glVertex2f(points[i].x/100.0, points[i].y/100.0);
+        glVertex2f(points[i].x/maxXY, points[i].y/maxXY);
     }
     glEnd();
 
@@ -53,32 +55,17 @@ void display(void)
     glColor3ub(0, 0, 254);
     for (int i = 0; i < lines.size(); i++)
     {
-        glVertex2f(lines[i].x/100.0, lines[i].y/100.0);
+        glVertex2f(lines[i].x/maxXY, lines[i].y/maxXY);
 
         if (i == lines.size()-1) {
-            glVertex2f(lines[0].x/100.0, lines[0].y/100.0);
+            glVertex2f(lines[0].x/maxXY, lines[0].y/maxXY);
         } else {
-            glVertex2f(lines[i+1].x/100.0, lines[i+1].y/100.0);
+            glVertex2f(lines[i+1].x/maxXY, lines[i+1].y/maxXY);
         }
     }
     glEnd();
 
     glFlush();
-}
-
-int getPointsNumber(std::string fileName)
-{
-    std::string line;
-    std::ifstream pointsFile(fileName);
-
-    if (pointsFile.is_open())
-    {
-        getline(pointsFile, line);
-    }
-
-    pointsFile.close();
-
-    return std::stoi(line);
 }
 
 // split the values of the text file (input is string separated by comma)
@@ -133,9 +120,6 @@ void addPoints(std::string fileName)
     std::vector<double> splittedValuesVector;
     std::ifstream pointsFile(fileName);
 
-    // Read and throw away the first line as it is the number of points
-    getline(pointsFile, line);
-
     Point p;
 
     while (!pointsFile.eof())
@@ -158,7 +142,7 @@ int main(int argc, char *argv[])
     std::string linesFileName;
 
     // number of points
-    int totalPoints;
+    //int totalPoints;
 
     // arguments:
     //     #1 is the file with the points data (e.g. points.dat)
@@ -174,7 +158,7 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    totalPoints = getPointsNumber(pointsFileName);
+    //totalPoints = getPointsNumber(pointsFileName);
     addPoints(pointsFileName);
     addLines(linesFileName);
 

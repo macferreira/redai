@@ -1,5 +1,5 @@
 # compile
-mpic++ convex-hull.cpp
+mpic++ convex-hull.cpp -o convex-hull
 
 # execute
-mpiexec -n 8 ./a.out
+mpiexec -n 4 ./convex-hull

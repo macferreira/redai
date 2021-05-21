@@ -15,6 +15,11 @@ struct Point
     double x, y;
 };
 
+typedef struct MpiPoint
+{
+    double x, y;
+} mpiPoint;
+
 // A global point needed for sorting points with reference
 // to the first point Used in compare function of qsort()
 Point p0;
@@ -182,8 +187,82 @@ std::vector<Point> convexHull(std::vector<Point> points)
     {
         convexHullVector.push_back(exportPointsVector[i]);
     }
-    
+
     return convexHullVector;
+}
+
+// find upper tangent of two polygons 'a' and 'b' represented as two vectors of points
+std::vector<Point> mergeHulls(std::vector<Point> a, std::vector<Point> b)
+{
+    int n1 = a.size(), n2 = b.size();
+
+    int ia = 0, ib = 0;
+    for (int i = 1; i < n1; i++)
+    {
+        if (a[i].x > a[ia].x)
+            ia = i;
+    }
+
+    // ib is the leftmost point of b
+    for (int i = 1; i < n2; i++)
+    {
+        if (b[i].x < b[ib].x)
+            ib = i;
+    }
+
+    // find the upper tangent
+    int inda = ia, indb = ib;
+    bool done = 0;
+    while (!done)
+    {
+        done = 1;
+        while (orientation(b[indb], a[inda], a[(inda + 1) % n1]) == 0 || orientation(b[indb], a[inda], a[(inda + 1) % n1]) == 1)
+            inda = (inda + 1) % n1;
+
+        while (orientation(a[inda], b[indb], b[(n2 + indb - 1) % n2]) == 0 || orientation(a[inda], b[indb], b[(n2 + indb - 1) % n2]) == 2)
+        {
+            indb = (n2 + indb - 1) % n2;
+            done = 0;
+        }
+    }
+
+    int uppera = inda, upperb = indb;
+    inda = ia, indb = ib;
+    done = 0;
+    int g = 0;
+    while (!done) //find the lower tangent
+    {
+        done = 1;
+        while (orientation(a[inda], b[indb], b[(indb + 1) % n2]) == 0 || orientation(a[inda], b[indb], b[(indb + 1) % n2]) == 1)
+            indb = (indb + 1) % n2;
+
+        while (orientation(b[indb], a[inda], a[(n1 + inda - 1) % n1]) == 0 || orientation(b[indb], a[inda], a[(n1 + inda - 1) % n1]) == 2)
+        {
+            inda = (n1 + inda - 1) % n1;
+            done = 0;
+        }
+    }
+
+    int lowera = inda, lowerb = indb;
+    vector<Point> retHull;
+
+    // retHull contains the convex hull after merging the two convex hulls with the points sorted counter-clockwise
+    int ind = uppera;
+    retHull.push_back(a[uppera]);
+    while (ind != lowera)
+    {
+        ind = (ind + 1) % n1;
+        retHull.push_back(a[ind]);
+    }
+
+    ind = lowerb;
+    retHull.push_back(b[lowerb]);
+    while (ind != upperb)
+    {
+        ind = (ind + 1) % n2;
+        retHull.push_back(b[ind]);
+    }
+    return retHull;
 }
 
 // Split the values of the text file (input is string separated by comma).
@@ -259,77 +338,115 @@ int main(int argc, char *argv[])
     // sort the points based in its x value
     qsort(&points[0], points.size(), sizeof(Point), compareXValue);
 
-
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &np);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
+
+    // defining the pivots of the points vector in order to distribute work between ranks
+    int interval = points.size() / np;
+    int rest = points.size() % np;
+    int maxPointsMessage = interval + rest;
+
+    // create an mpi type for struct points
+    const int nitems = 2;
+    int blocklengths[2] = {1, 1};
+    MPI_Datatype types[2] = {MPI_DOUBLE, MPI_DOUBLE};
+    MPI_Datatype mpi_points_type;
+    MPI_Aint offsets[2];
+    offsets[0] = offsetof(mpiPoint, x);
+    offsets[1] = offsetof(mpiPoint, y);
+    MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_points_type);
+    MPI_Type_commit(&mpi_points_type);
 
     if (id == 0)
     {
         // process 0 starts measuring time
         ts = -MPI_Wtime();
 
-        int interval = points.size() / np;
-        int rest = points.size() % np;
-
         int chunkMessageSend[2];
-
-        //std::cout << interval << "," << rest << std::endl;
-
-        for (int i = 1; i < np; i++) {
+        for (int i = 1; i < np; i++)
+        {
             // index zero holds the vector index where the rank should start
-            chunkMessageSend[0] = interval*i;
+            chunkMessageSend[0] = interval * i;
             // index 1 holds the number of points the rank should process
-            chunkMessageSend[1] = (i == np-1) ? interval + rest : interval;
+            chunkMessageSend[1] = (i == np - 1) ? interval + rest : interval;
 
             MPI_Send(&chunkMessageSend, 2, MPI_INT, i, 0, MPI_COMM_WORLD);
         }
     }
 
-    if ( id!=0 )
+    if (id != 0)
     {
         int chunkMessageReceived[2];
         MPI_Recv(&chunkMessageReceived, 2, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         int startingIndex = chunkMessageReceived[0];
         int chunkSize = chunkMessageReceived[1];
 
+        // calculate it's partial hull and send it to rank 1
         std::vector<Point> tempPoints;
 
-        for (int i = startingIndex; i < startingIndex+chunkSize; i++) {
+        for (int i = startingIndex; i < startingIndex + chunkSize; i++)
+        {
             tempPoints.push_back(points[i]);
         }
         std::vector<Point> partialHull = convexHull(tempPoints);
 
-        std::cout << "Im rank " << id << "and my hull is:" << std::endl;
+        Point partialHullSend[partialHull.size()];
         for (int i = 0; i < partialHull.size(); i++)
         {
-            std::cout << "(" << partialHull[i].x << "," << partialHull[i].y << ")";
+            partialHullSend[i] = partialHull[i];
         }
-
-        std::cout << std::endl;
-    } else {
-        int startingIndex = 0;
-        int chunkSize = points.size() / np;
-
-        std::vector<Point> tempPoints;
-
-        for (int i = startingIndex; i < startingIndex+chunkSize; i++) {
-            tempPoints.push_back(points[i]);
-        }
-        std::vector<Point> partialHull = convexHull(tempPoints);
-
-        std::cout << "Im rank " << id << "and my hull is:" << std::endl;
-        for (int i = 0; i < partialHull.size(); i++)
-        {
-            std::cout << "(" << partialHull[i].x << "," << partialHull[i].y << ")";
-        }
-
-        std::cout << std::endl;
+        MPI_Send(&partialHullSend, partialHull.size(), mpi_points_type, 0, 0, MPI_COMM_WORLD);
     }
-
-    if (id == 0)
+    else
     {
-        ts += MPI_Wtime(); // process 0 measures time
+        // all the partial hulls to be stitched
+        std::vector<std::vector<Point>> partialHulls;
+
+        // calculate it's own partial hull (rank 1)
+        std::vector<Point> tempPoints;
+        for (int i = 0; i < interval; i++)
+        {
+            tempPoints.push_back(points[i]);
+        }
+        std::vector<Point> partialHull = convexHull(tempPoints);
+        partialHulls.push_back(partialHull);
+
+        // receive partial hulls from the others
+        Point partialHullMessageReceived[maxPointsMessage];
+        MPI_Status partialHullMsgStatus;
+        for (int i = 1; i < np; i++)
+        {
+            int partialHullMsgCount;
+            std::vector<Point> tempPartialHull;
+            MPI_Recv(&partialHullMessageReceived, maxPointsMessage, mpi_points_type, i, 0, MPI_COMM_WORLD, &partialHullMsgStatus);
+            MPI_Get_count(&partialHullMsgStatus, mpi_points_type, &partialHullMsgCount);
+            for (int j = 0; j < partialHullMsgCount; j++)
+            {
+                tempPartialHull.push_back(partialHullMessageReceived[j]);
+            }
+            partialHulls.push_back(tempPartialHull);
+        }
+
+        while (partialHulls.size() > 1)
+        {
+            std::vector<Point> tempCalcVector = mergeHulls(partialHulls[partialHulls.size() - 2], partialHulls[partialHulls.size() - 1]);
+            partialHulls.erase(partialHulls.begin() + (partialHulls.size() - 1));
+            partialHulls.erase(partialHulls.begin() + (partialHulls.size() - 1));
+            partialHulls.push_back(tempCalcVector);
+        }
+
+        // partialHulls[0] is now the final hull
+        std::ofstream exportFile;
+        exportFile.open(exportFileName);
+        for (int i = 0; i < partialHulls[0].size(); i++)
+        {
+            exportFile << partialHulls[0][i].x << "," << partialHulls[0][i].y << std::endl;
+        }
+        exportFile.close();
+
+        // process 0 measures time
+        ts += MPI_Wtime();
         printf("Time: %f s\n", ts);
     }
 
