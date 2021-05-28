@@ -1,0 +1,3 @@
+set xlabel "Processors"
+set ylabel "Efficiency"
+plot "data.dat" with linespoints ls 1 notitle
